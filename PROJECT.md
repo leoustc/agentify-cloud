@@ -1,4 +1,4 @@
-# PROJECT Agentify
+# PROJECT Agentify Cloud
 
 this project is to use pi agent as the fastapi and fastmcp server backend. you have a python server running on port 8000 (default).
 
@@ -11,6 +11,9 @@ in this port, you have a fastapi server and a mcp server.
 - internal Pi AgentSession bridge runs locally and accepts POST JSON messages, returning JSON messages
 - the Python server should start/use this embedded local Pi AgentSession bridge by default, instead of requiring the user to set `AGENTIFY_PI_URL` for normal local runs
 - `AGENTIFY_PI_URL` may remain as an override for advanced/external Pi AgentSession endpoints
+- published Python distribution package name: `agentify-cloud`
+- Python import package remains `agentify` because `agentify-cloud` is not a valid
+  import module name
 
 # CLI
 - a uv pip package with cli:
@@ -18,6 +21,8 @@ in this port, you have a fastapi server and a mcp server.
         pi agent login routine, as the customer to choose pi agent backend
     2. agentify server [--port 8000] [-api_key abc123,abc1234] [-api_key_file path-to-key-list-file]
     start the server
+- `agentify-cloud` is retained as a console-script alias for users who prefer a
+  command matching the distribution name
 
 # HTTP behavior
 
@@ -51,4 +56,3 @@ you decode the html content from this json file and return to the user, if there
    "body": "string(the tool call)",
    "format": "json"
 }
-

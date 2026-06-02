@@ -33,10 +33,12 @@
    - If no fixes are needed, report completion to Manager/user.
 
 5. **Release handling**
-   - Release owns PyPI/npm publishing, package build issues, release metadata/manifests, registry authentication/config, and release toolchain fixes.
+   - Release owns PyPI/npm publishing, package build issues, release metadata/manifests, registry authentication/config, release toolchain fixes, and release git commit/push work.
    - Release may fix build/release configuration needed for packaging or publishing.
-   - Release must verify package/build commands before publishing and must not expose secrets.
-   - Release publishes only when explicitly authorized by the user or Manager for that run.
+   - Release may set or verify git remotes, commit release-ready changes, and push with SSH when explicitly authorized.
+   - Release must inspect `git status` before committing and avoid secrets, virtualenvs, caches, `node_modules`, and generated artifacts that should remain ignored.
+   - Release must verify package/build commands before publishing or pushing release changes and must not expose secrets.
+   - Release publishes, commits, or pushes only when explicitly authorized by the user or Manager for that run.
 
 ## Boundaries
 

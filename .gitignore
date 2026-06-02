@@ -30,6 +30,7 @@ dist/
 # Agentify local runtime state
 .agentify/
 agentify.sqlite*
+runtime/
 
 # Node/vendor dependencies for embedded Pi bridge
 node_modules/

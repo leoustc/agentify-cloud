@@ -6,6 +6,8 @@ API_KEY_FILE ?=
 PUBLISH_REPOSITORY ?= pypi
 PUBLISH_REPOSITORY_URL ?=
 PYPIRC ?= $(HOME)/.pypirc
+RUNTIME_DIR ?= runtime
+PROJECT_DIR := $(CURDIR)
 
 SERVER_ARGS := --port $(PORT)
 ifneq ($(strip $(API_KEY)),)
@@ -26,7 +28,7 @@ endif
 .PHONY: help install dev build run test compile publish publish-artifacts publish-check clean
 
 help:
-	@echo "Agentify targets:"
+	@echo "Agentify Cloud targets:"
 	@echo "  make install              Install package with uv"
 	@echo "  make dev                  Install package with dev/test dependencies"
 	@echo "  make build                Build package artifacts"
@@ -37,6 +39,7 @@ help:
 	@echo "  make clean                Remove build/test caches"
 	@echo ""
 	@echo "Optional run args: API_KEY=abc,def API_KEY_FILE=path/to/keys"
+	@echo "Runtime cwd: RUNTIME_DIR=runtime; default AGENTS.md is read from there"
 	@echo "Optional publish args: PUBLISH_REPOSITORY=pypi PYPIRC=~/.pypirc"
 	@echo "Custom repository URL: PUBLISH_REPOSITORY_URL=https://upload.example/simple"
 	@echo "PUBLISH_REPOSITORY is a .pypirc section name; URLs must use PUBLISH_REPOSITORY_URL."
@@ -54,7 +57,8 @@ build:
 	$(UV) build
 
 run:
-	$(UV) run agentify server $(SERVER_ARGS)
+	mkdir -p $(RUNTIME_DIR)
+	cd $(RUNTIME_DIR) && $(UV) run --project $(PROJECT_DIR) agentify server $(SERVER_ARGS)
 
 test:
 	$(UV) run --extra dev pytest
@@ -77,6 +81,8 @@ publish-check: publish-artifacts
 	@find dist -maxdepth 1 -type f ! -name '.*' -printf '  %p\n' | sort
 	@echo "Upload command not run:"
 	@echo "  $(UV) run --with twine twine upload $(PUBLISH_ARGS) dist/*"
+
+release: publish
 
 clean:
 	rm -rf build dist *.egg-info .pytest_cache

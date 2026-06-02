@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentify-cloud"
-version = "0.1.1"
-description = "FastAPI and FastMCP gateway backed by a local Pi AgentSession"
-readme = "PROJECT.md"
+version = "0.1.3"
+description = "Universal FastAPI and FastMCP gateway backed by a local Pi AgentSession"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.110",
@@ -22,6 +22,7 @@ dev = [
 
 [project.scripts]
 agentify = "agentify.cli:main"
+agentify-cloud = "agentify.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentify"]
@@ -32,6 +33,7 @@ include = [
   "/AGENTS.md",
   "/EXECUTION.md",
   "/PROJECT.md",
+  "/README.md",
   "/src",
   "/tests",
 ]

@@ -37,6 +37,7 @@ def create_app(
     api_keys: set[str] | None = None,
     pi_client: Any | None = None,
     include_mcp: bool = True,
+    context_system_instruction: str | None = None,
 ) -> FastAPI:
     configured_keys = api_keys or set()
     client = pi_client or PiAgentSessionClient()
@@ -44,11 +45,12 @@ def create_app(
     mcp_error: str | None = None
 
     if include_mcp:
-        mcp_mount, mcp_error = build_fastmcp_mount(client)
+        mcp_mount, mcp_error = build_fastmcp_mount(client, context_system_instruction)
 
     client_lifespan = build_client_lifespan(client)
     mcp_lifespan = getattr(mcp_mount.app, "lifespan", None) if mcp_mount else None
     app = FastAPI(title="Agentify", lifespan=combine_lifespans(client_lifespan, mcp_lifespan))
+    app.state.context_system_instruction = context_system_instruction
 
     if include_mcp:
         if mcp_mount:
@@ -69,20 +71,23 @@ def create_app(
 
     @app.get("/{path:path}", response_class=HTMLResponse, dependencies=[Depends(require_api_key)])
     async def delegate_get(path: str, request: Request) -> HTMLResponse:
-        prompt = build_get_prompt(request)
+        prompt = build_get_prompt(request, context_system_instruction)
         result = await delegate_with_retry(client, prompt, validate_html_response)
         return HTMLResponse(content=result, status_code=status.HTTP_200_OK)
 
     @app.post("/{path:path}", dependencies=[Depends(require_api_key)])
     async def delegate_post(path: str, request: Request) -> JSONResponse:
-        prompt = await build_post_prompt(request)
+        prompt = await build_post_prompt(request, context_system_instruction)
         result = await delegate_with_retry(client, prompt, validate_json_response)
         return JSONResponse(content=result, status_code=status.HTTP_200_OK)
 
     return app
 
 
-def build_fastmcp_mount(client: Any) -> tuple[FastMCPMount | None, str | None]:
+def build_fastmcp_mount(
+    client: Any,
+    context_system_instruction: str | None = None,
+) -> tuple[FastMCPMount | None, str | None]:
     """Build the FastMCP ASGI app before the parent FastAPI app is created."""
 
     try:
@@ -94,7 +99,7 @@ def build_fastmcp_mount(client: Any) -> tuple[FastMCPMount | None, str | None]:
 
     @mcp.tool
     async def agentify(payload: Any = None) -> Any:
-        return await delegate_mcp_tool(client, payload)
+        return await delegate_mcp_tool(client, payload, context_system_instruction)
 
     return FastMCPMount(mcp=mcp, app=mcp.http_app(path="/")), None
 
@@ -138,24 +143,33 @@ def endpoint_from_request(request: Request) -> str:
     return endpoint
 
 
-async def build_post_prompt(request: Request) -> dict[str, Any]:
+async def build_post_prompt(request: Request, context_system_instruction: str | None = None) -> dict[str, Any]:
     raw_body = await request.body()
     body = decode_body(raw_body)
     instruction = decode_instruction(raw_body)
-    return {
+    return with_context_system_instruction({
         "endpoint": endpoint_from_request(request),
         "instruction": instruction,
         "body": body,
         "format": "json",
-    }
+    }, context_system_instruction)
 
 
-def build_get_prompt(request: Request) -> dict[str, Any]:
-    return {
+def build_get_prompt(request: Request, context_system_instruction: str | None = None) -> dict[str, Any]:
+    return with_context_system_instruction({
         "endpoint": endpoint_from_request(request),
         "instruction": GET_HTML_INSTRUCTION,
         "format": "html",
-    }
+    }, context_system_instruction)
+
+
+def with_context_system_instruction(
+    prompt: dict[str, Any],
+    context_system_instruction: str | None,
+) -> dict[str, Any]:
+    if context_system_instruction is not None:
+        prompt["context_system_instruction"] = context_system_instruction
+    return prompt
 
 
 def decode_body(raw_body: bytes) -> str:
@@ -224,14 +238,14 @@ def with_failure_information(prompt: dict[str, Any], failures: list[str], attemp
     return retry_prompt
 
 
-def build_mcp_prompt(payload: Any = None) -> dict[str, Any]:
+def build_mcp_prompt(payload: Any = None, context_system_instruction: str | None = None) -> dict[str, Any]:
     instruction = payload.get("instruction") if isinstance(payload, dict) else None
-    return {
+    return with_context_system_instruction({
         "tool function": "user called tools",
         "instruciton": instruction,
         "body": stringify_tool_payload(payload),
         "format": "json",
-    }
+    }, context_system_instruction)
 
 
 def stringify_tool_payload(payload: Any = None) -> str:
@@ -243,15 +257,15 @@ def stringify_tool_payload(payload: Any = None) -> str:
         return str(payload)
 
 
-async def delegate_mcp_tool(client: Any, payload: Any = None) -> Any:
-    prompt = build_mcp_prompt(payload)
+async def delegate_mcp_tool(client: Any, payload: Any = None, context_system_instruction: str | None = None) -> Any:
+    prompt = build_mcp_prompt(payload, context_system_instruction)
     return await delegate_with_retry(client, prompt, validate_json_response)
 
 
-def run_server(port: int, api_keys: set[str]) -> None:
+def run_server(port: int, api_keys: set[str], context_system_instruction: str | None) -> None:
     import uvicorn
 
-    app = create_app(api_keys=api_keys)
+    app = create_app(api_keys=api_keys, context_system_instruction=context_system_instruction)
     uvicorn.run(app, host="0.0.0.0", port=port)
 
 

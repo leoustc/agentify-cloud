@@ -2,8 +2,10 @@
 
 ## Objective
 
-Build a Python package and CLI named `agentify` that starts one local server on
-port `8000` by default. The server must expose:
+Build a Python distribution package named `agentify-cloud` with a primary
+`agentify` CLI that starts one local server on port `8000` by default. The
+Python import package remains `agentify` because `agentify-cloud` is not a
+valid Python module name. The server must expose:
 
 - a FastAPI HTTP app that delegates arbitrary GET and POST endpoints to a local
   Pi Agent AgentSession backend
@@ -20,9 +22,12 @@ customization.
 Create a conventional Python package layout:
 
 - `pyproject.toml`
-  - package metadata for `agentify`
+  - package metadata for distribution `agentify-cloud`
   - runtime dependencies for FastAPI, Uvicorn, FastMCP, HTTP client, and CLI
-  - console script entry point `agentify = "agentify.cli:app"` or equivalent
+  - primary console script entry point `agentify = "agentify.cli:main"` or
+    equivalent
+  - compatibility console script entry point `agentify-cloud = "agentify.cli:main"`
+    for users who prefer a command matching the distribution name
   - pytest/test dependencies if the project uses optional dev extras
 - `src/agentify/__init__.py`
 - `src/agentify/cli.py`
@@ -53,6 +58,7 @@ Requirements:
   minimal interactive command that records the selected backend locally and
   keeps the Pi-specific integration isolated in `auth.py`.
 - `agentify server` starts the combined FastAPI/FastMCP service.
+- `agentify-cloud` remains available as a distribution-name console-script alias.
 - `--port` defaults to `8000`.
 - `-api_key` accepts a comma-separated list.
 - `-api_key_file` reads one API key per non-empty line.

@@ -23,8 +23,9 @@ class FakePiClient:
 
 
 def test_post_prompt_construction_and_json_relay() -> None:
+    seed = "# Agent seed\n\nUse project rules."
     fake = FakePiClient([{"ok": True}])
-    app = create_app(pi_client=fake, include_mcp=False)
+    app = create_app(pi_client=fake, include_mcp=False, context_system_instruction=seed)
     client = TestClient(app)
 
     response = client.post("/v1/do?x=1", json={"instruction": "run", "value": 3})
@@ -37,13 +38,26 @@ def test_post_prompt_construction_and_json_relay() -> None:
             "instruction": "run",
             "body": '{"instruction":"run","value":3}',
             "format": "json",
+            "context_system_instruction": seed,
         }
     ]
 
 
+def test_empty_context_system_instruction_is_preserved_in_post_prompt() -> None:
+    fake = FakePiClient([{"ok": True}])
+    app = create_app(pi_client=fake, include_mcp=False, context_system_instruction="")
+    client = TestClient(app)
+
+    response = client.post("/v1/empty", json={"instruction": "run"})
+
+    assert response.status_code == 200
+    assert fake.prompts[0]["context_system_instruction"] == ""
+
+
 def test_get_prompt_construction_and_html_extraction() -> None:
+    seed = "# Agent seed\n\nRender carefully."
     fake = FakePiClient([{"content": "<html>ok</html>"}])
-    app = create_app(pi_client=fake, include_mcp=False)
+    app = create_app(pi_client=fake, include_mcp=False, context_system_instruction=seed)
     client = TestClient(app)
 
     response = client.get("/docs/page?topic=x")
@@ -53,11 +67,24 @@ def test_get_prompt_construction_and_html_extraction() -> None:
     assert response.headers["content-type"].startswith("text/html")
     assert fake.prompts[0]["endpoint"] == "/docs/page?topic=x"
     assert fake.prompts[0]["format"] == "html"
+    assert fake.prompts[0]["context_system_instruction"] == seed
+
+
+def test_empty_context_system_instruction_is_preserved_in_get_prompt() -> None:
+    fake = FakePiClient([{"content": "<html>ok</html>"}])
+    app = create_app(pi_client=fake, include_mcp=False, context_system_instruction="")
+    client = TestClient(app)
+
+    response = client.get("/empty-seed")
+
+    assert response.status_code == 200
+    assert fake.prompts[0]["context_system_instruction"] == ""
 
 
 def test_retry_after_invalid_html_response() -> None:
+    seed = "# Agent seed\n\nRetry with same context."
     fake = FakePiClient([{"bad": True}, {"content": "<html>fixed</html>"}])
-    app = create_app(pi_client=fake, include_mcp=False)
+    app = create_app(pi_client=fake, include_mcp=False, context_system_instruction=seed)
     client = TestClient(app)
 
     response = client.get("/needs-html")
@@ -66,6 +93,20 @@ def test_retry_after_invalid_html_response() -> None:
     assert response.text == "<html>fixed</html>"
     assert len(fake.prompts) == 2
     assert fake.prompts[1]["failure"]["attempt"] == 1
+    assert fake.prompts[1]["context_system_instruction"] == seed
+
+
+def test_empty_context_system_instruction_is_preserved_in_retry_prompt() -> None:
+    fake = FakePiClient([{"bad": True}, {"content": "<html>fixed</html>"}])
+    app = create_app(pi_client=fake, include_mcp=False, context_system_instruction="")
+    client = TestClient(app)
+
+    response = client.get("/empty-seed-retry")
+
+    assert response.status_code == 200
+    assert len(fake.prompts) == 2
+    assert fake.prompts[1]["failure"]["attempt"] == 1
+    assert fake.prompts[1]["context_system_instruction"] == ""
 
 
 def test_api_key_enforcement() -> None:
@@ -86,6 +127,26 @@ def test_mcp_prompt_construction() -> None:
         "instruciton": "do work",
         "body": '{"instruction": "do work", "x": 1}',
         "format": "json",
+    }
+
+
+def test_mcp_prompt_includes_context_system_instruction() -> None:
+    assert build_mcp_prompt({"instruction": "do work"}, "# Agent seed") == {
+        "tool function": "user called tools",
+        "instruciton": "do work",
+        "body": '{"instruction": "do work"}',
+        "format": "json",
+        "context_system_instruction": "# Agent seed",
+    }
+
+
+def test_mcp_prompt_preserves_empty_context_system_instruction() -> None:
+    assert build_mcp_prompt({"instruction": "do work"}, "") == {
+        "tool function": "user called tools",
+        "instruciton": "do work",
+        "body": '{"instruction": "do work"}',
+        "format": "json",
+        "context_system_instruction": "",
     }
 
 
