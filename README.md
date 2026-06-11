@@ -30,6 +30,12 @@ runtime. The embedded Pi AgentSession bridge is the default path, while
 `AGENTIFY_PI_URL` remains an advanced override for users who already operate a
 separate Pi backend.
 
+Installed packages materialize the locked Pi npm runtime into a per-user cache
+on first start. The cache is keyed by the packaged runtime files and guarded by
+a per-runtime lock so concurrent first starts reuse one completed dependency
+tree. Source checkouts with `src/vendor/pi/node_modules` already present use the
+vendored runtime directly.
+
 Release and runtime behavior should stay explicit: clear commands, fresh build
 artifacts, bounded retries, clear errors, and no hidden publishing steps.
 
@@ -52,6 +58,7 @@ The server listens on `0.0.0.0:8000` by default and exposes:
 - HTTP GET and POST handling for any path
 - an MCP server mounted at `/mcp`
 - an embedded local Pi AgentSession bridge from `src/vendor/pi`
+- first-run Pi npm dependency materialization for installed wheels
 - an `AGENTS.md` prompt gate read at startup
 
 `AGENTIFY_PI_URL` is optional. Set it only when you want to use an external or

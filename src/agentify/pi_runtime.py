@@ -5,10 +5,13 @@ from __future__ import annotations
 import json
 import os
 import select
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
+from typing import IO
 
 
 class PiRuntimeError(RuntimeError):
@@ -37,6 +40,123 @@ def default_vendor_pi_dir() -> Path:
     return Path(__file__).resolve().parents[1] / "vendor" / "pi"
 
 
+def materialize_vendor_pi_runtime(vendor_dir: Path) -> Path:
+    """Return a Pi runtime directory with npm dependencies installed."""
+
+    dependency = vendor_dir / "node_modules" / "@earendil-works" / "pi-coding-agent"
+    if dependency.exists():
+        return vendor_dir
+
+    package_json = vendor_dir / "package.json"
+    package_lock = vendor_dir / "package-lock.json"
+    bridge = vendor_dir / "agentify-bridge.mjs"
+    missing = [path.name for path in (package_json, package_lock, bridge) if not path.is_file()]
+    if missing:
+        raise PiRuntimeError(
+            "Embedded Pi runtime cannot be materialized because "
+            f"{', '.join(missing)} {'is' if len(missing) == 1 else 'are'} missing from {vendor_dir}."
+        )
+
+    cache_dir = Path(
+        os.environ.get(
+            "AGENTIFY_PI_VENDOR_CACHE",
+            Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "agentify-cloud" / "pi-runtime",
+        )
+    )
+    digest = sha256()
+    for path in (package_json, package_lock, bridge):
+        digest.update(path.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    target = cache_dir / digest.hexdigest()[:16]
+    cached_dependency = target / "node_modules" / "@earendil-works" / "pi-coding-agent"
+    ready_marker = target / ".agentify-pi-runtime-ready"
+    if ready_marker.is_file() and cached_dependency.exists():
+        return target
+
+    npm = os.environ.get("AGENTIFY_NPM", "npm")
+    temp_target = cache_dir / f".materializing-{os.getpid()}-{time.monotonic_ns()}"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = cache_dir / f"{target.name}.lock"
+    with open(lock_path, "a+b") as lock_file:
+        lock_cache_target(lock_file)
+        if ready_marker.is_file() and cached_dependency.exists():
+            return target
+        if target.exists():
+            shutil.rmtree(target)
+        materialize_cache_target(
+            npm=npm,
+            temp_target=temp_target,
+            target=target,
+            package_json=package_json,
+            package_lock=package_lock,
+            bridge=bridge,
+            ready_marker_name=ready_marker.name,
+        )
+    return target
+
+
+def lock_cache_target(lock_file: IO[bytes]) -> None:
+    try:
+        import fcntl
+    except ImportError as exc:  # pragma: no cover - fcntl is available on supported Unix-like targets.
+        raise PiRuntimeError("Embedded Pi runtime cache locking requires fcntl on this platform.") from exc
+
+    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+
+
+def materialize_cache_target(
+    *,
+    npm: str,
+    temp_target: Path,
+    target: Path,
+    package_json: Path,
+    package_lock: Path,
+    bridge: Path,
+    ready_marker_name: str,
+) -> None:
+    try:
+        if temp_target.exists():
+            shutil.rmtree(temp_target)
+        temp_target.mkdir(parents=True)
+        for path in (package_json, package_lock, bridge):
+            shutil.copy2(path, temp_target / path.name)
+        result = subprocess.run(
+            [npm, "ci", "--omit=dev"],
+            cwd=str(temp_target),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except OSError as exc:
+        shutil.rmtree(temp_target, ignore_errors=True)
+        raise PiRuntimeError(
+            f"Embedded Pi runtime needs npm dependencies, but {npm!r} could not be started: {exc}."
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        shutil.rmtree(temp_target, ignore_errors=True)
+        output = "\n".join(part for part in (exc.stdout, exc.stderr) if part)
+        raise PiRuntimeError(
+            "Timed out while materializing embedded Pi runtime with npm ci --omit=dev"
+            + (f": {output.strip()}" if output.strip() else ".")
+        ) from exc
+
+    if result.returncode != 0:
+        shutil.rmtree(temp_target, ignore_errors=True)
+        output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+        raise PiRuntimeError(
+            "Failed to materialize embedded Pi runtime with npm ci --omit=dev. "
+            "Install Node.js/npm and ensure the npm registry is reachable, then retry."
+            + (f"\n{output.strip()}" if output.strip() else "")
+        )
+
+    (temp_target / ready_marker_name).write_text("ok\n", encoding="utf-8")
+    temp_target.replace(target)
+
+
 def start_embedded_pi_runtime(
     *,
     vendor_dir: Path | None = None,
@@ -50,6 +170,8 @@ def start_embedded_pi_runtime(
         raise PiRuntimeError(f"Embedded Pi runtime is missing at {runtime_dir}.")
     if not bridge.is_file():
         raise PiRuntimeError(f"Embedded Pi AgentSession bridge is missing at {bridge}.")
+    runtime_dir = materialize_vendor_pi_runtime(runtime_dir)
+    bridge = runtime_dir / "agentify-bridge.mjs"
 
     node = os.environ.get("AGENTIFY_NODE", "node")
     try:

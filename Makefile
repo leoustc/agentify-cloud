@@ -25,7 +25,7 @@ PUBLISH_ARGS := --config-file $(PYPIRC) --repository $(PUBLISH_REPOSITORY)
 PUBLISH_TARGET := .pypirc repository '$(PUBLISH_REPOSITORY)' using '$(PYPIRC)'
 endif
 
-.PHONY: help install dev build run test compile publish publish-artifacts publish-check clean
+.PHONY: help install dev build run test compile installed-artifact-check publish publish-artifacts publish-check clean
 
 help:
 	@echo "Agentify Cloud targets:"
@@ -34,6 +34,8 @@ help:
 	@echo "  make build                Build package artifacts"
 	@echo "  make run [PORT=8000]      Run agentify server"
 	@echo "  make test                 Run tests and syntax checks"
+	@echo "  make installed-artifact-check"
+	@echo "                             Build/install wheel and start embedded Pi bridge"
 	@echo "  make publish              Build and publish to PyPI with uv"
 	@echo "  make publish-check        Build fresh artifacts and print the upload command"
 	@echo "  make clean                Remove build/test caches"
@@ -66,6 +68,11 @@ test:
 
 compile:
 	$(UV) run $(PYTHON) -m compileall src
+
+installed-artifact-check:
+	rm -rf dist
+	$(UV) build
+	$(PYTHON) scripts/check_installed_artifact.py
 
 publish-artifacts: test
 	rm -rf dist
